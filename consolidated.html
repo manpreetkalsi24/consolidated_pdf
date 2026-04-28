@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Document Upload System</title>
+
+  <style>
+    body {
+      font-family: Arial;
+      background: #f5f7fb;
+      max-width: 800px;
+      margin: auto;
+      padding: 20px;
+    }
+
+    h2 {
+      text-align: center;
+    }
+
+    .form-group {
+      margin-bottom: 15px;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 10px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+    }
+
+    .upload-box {
+      background: white;
+      border: 2px dashed #cbd5e1;
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 15px;
+      text-align: center;
+    }
+
+    .upload-box:hover {
+      border-color: #4CAF50;
+    }
+
+    input[type="file"] {
+      margin-top: 10px;
+    }
+
+    .link {
+      display: block;
+      margin-top: 8px;
+      font-size: 13px;
+    }
+
+    button {
+      width: 100%;
+      padding: 14px;
+      background: #4CAF50;
+      color: white;
+      border: none;
+      font-size: 16px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      background: gray;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+
+<body>
+
+<h2>Upload Your Documents</h2>
+
+<div class="form-group">
+  <label>First Name *</label>
+  <input type="text" id="firstName" required>
+</div>
+
+<div class="form-group">
+  <label>Last Name *</label>
+  <input type="text" id="lastName" required>
+</div>
+
+<div class="upload-box">
+  Headshot Photo
+  <input type="file" id="photo" accept=".pdf,.jpg,.jpeg,.png,.webp">
+</div>
+
+<div class="upload-box">
+  Driver License
+  <input type="file" id="license" accept=".pdf,.jpg,.jpeg,.png,.webp">
+</div>
+
+<div class="upload-box">
+  Driver License Abstract
+  <input type="file" id="abstract" accept=".pdf,.jpg,.jpeg,.png,.webp">
+</div>
+
+<div class="upload-box">
+  Criminal Record Check
+  <input type="file" id="criminal" accept=".pdf,.jpg,.jpeg,.png,.webp">
+</div>
+
+<div class="upload-box">
+  Work Permit
+  <input type="file" id="work" accept=".pdf,.jpg,.jpeg,.png,.webp">
+</div>
+
+<div class="upload-box">
+  SIN Document
+  <input type="file" id="sin" accept=".pdf,.jpg,.jpeg,.png,.webp">
+</div>
+
+<div class="upload-box">
+  Void Cheque
+  <input type="file" id="cheque" accept=".pdf,.jpg,.jpeg,.png,.webp">
+</div>
+
+<div class="upload-box">
+  Training Certificate
+  <input type="file" id="training" accept=".pdf,.jpg,.jpeg,.png,.webp">
+  <a class="link" href="https://www.labour.gov.on.ca/english/hs/elearn/worker/foursteps.php" target="_blank">
+    Don’t have one? Get your certificate here
+  </a>
+</div>
+
+<div class="upload-box">
+  Other Documents (Multiple Allowed)
+  <input type="file" id="other" multiple accept=".pdf,.jpg,.jpeg,.png,.webp">
+</div>
+
+<button id="actionBtn" disabled onclick="mergeFiles()">
+  Fill Name & Upload Files
+</button>
+
+<script src="https://unpkg.com/pdf-lib"></script>
+
+<script>
+const fields = ["photo","license","abstract","criminal","work","sin","cheque","training","other"];
+
+// Check form validation
+document.querySelectorAll("input").forEach(el => {
+  el.addEventListener("input", checkForm);
+  el.addEventListener("change", checkForm);
+});
+
+function checkForm() {
+  const first = document.getElementById("firstName").value.trim();
+  const last = document.getElementById("lastName").value.trim();
+
+  const anyFile = fields.some(id => {
+    return document.getElementById(id).files.length > 0;
+  });
+
+  const btn = document.getElementById("actionBtn");
+
+  if (first && last && anyFile) {
+    btn.disabled = false;
+    btn.innerText = "Generate PDF";
+  } else {
+    btn.disabled = true;
+    btn.innerText = "Fill Name & Upload Files";
+  }
+}
+
+// Merge function
+async function mergeFiles() {
+  const { PDFDocument } = PDFLib;
+  const mergedPdf = await PDFDocument.create();
+
+  let validFiles = 0;
+
+  for (let id of fields) {
+    const input = document.getElementById(id);
+
+    for (let file of input.files) {
+      const bytes = await file.arrayBuffer();
+
+      // PDF
+      if (file.type === "application/pdf") {
+        try {
+          const pdf = await PDFDocument.load(bytes);
+          const pages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
+          pages.forEach(p => mergedPdf.addPage(p));
+          validFiles++;
+        } catch {
+          alert(file.name + " invalid PDF");
+        }
+      }
+
+      // JPG / PNG / WEBP
+      else if (
+        file.type === "image/jpeg" ||
+        file.type === "image/png" ||
+        file.type === "image/webp"
+      ) {
+        try {
+          let img;
+
+          if (file.type === "image/jpeg") {
+            img = await mergedPdf.embedJpg(bytes);
+          }
+          else if (file.type === "image/png") {
+            img = await mergedPdf.embedPng(bytes);
+          }
+          else {
+            // WEBP → convert
+            const blob = new Blob([bytes], { type: "image/webp" });
+            const url = URL.createObjectURL(blob);
+
+            const image = new Image();
+            image.src = url;
+
+            await new Promise(res => image.onload = res);
+
+            const canvas = document.createElement("canvas");
+            canvas.width = image.width;
+            canvas.height = image.height;
+
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(image, 0, 0);
+
+            const pngData = canvas.toDataURL("image/png");
+            const pngBytes = await fetch(pngData).then(r => r.arrayBuffer());
+
+            img = await mergedPdf.embedPng(pngBytes);
+
+            URL.revokeObjectURL(url);
+          }
+
+          const page = mergedPdf.addPage([img.width, img.height]);
+
+          page.drawImage(img, {
+            x: 0,
+            y: 0,
+            width: img.width,
+            height: img.height
+          });
+
+          validFiles++;
+
+        } catch {
+          alert("Error with " + file.name);
+        }
+      }
+
+      else {
+        alert(file.name + " not supported");
+      }
+    }
+  }
+
+  if (validFiles === 0) {
+    alert("No valid files uploaded");
+    return;
+  }
+
+  const mergedBytes = await mergedPdf.save();
+
+  // File naming
+  const first = document.getElementById("firstName").value.trim();
+  const last = document.getElementById("lastName").value.trim();
+
+  const now = new Date();
+  const timestamp = now.getFullYear() +
+    ("0" + (now.getMonth()+1)).slice(-2) +
+    ("0" + now.getDate()).slice(-2) + "_" +
+    ("0" + now.getHours()).slice(-2) +
+    ("0" + now.getMinutes()).slice(-2);
+
+  const filename = `${first}_${last}_${timestamp}.pdf`;
+
+  const blob = new Blob([mergedBytes], { type: "application/pdf" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+
+  document.body.appendChild(a);
+  a.click();
+
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+</script>
+
+</body>
+</html>
